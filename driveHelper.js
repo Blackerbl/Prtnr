@@ -1,50 +1,74 @@
-// driveHelper.js
-
-const { google } = require('googleapis');
 const fs = require('fs');
+const readline = require('readline');
+const { google } = require('googleapis');
 
-const credentials = {
-  web: {
-    client_id: process.env.CLIENT_ID,
-    project_id: process.env.PROJECT_ID,
-    auth_uri: 'https://accounts.google.com/o/oauth2/auth',
-    token_uri: 'https://oauth2.googleapis.com/token',
-    auth_provider_x509_cert_url: 'https://www.googleapis.com/oauth2/v1/certs',
-    client_secret: process.env.CLIENT_SECRET,
-  },
-};
+const SCOPES = ['https://www.googleapis.com/auth/drive.file'];
+const TOKEN_PATH = 'token.json';
 
-const { client_secret, client_id, redirect_uris } = credentials.web;
-const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, redirect_uris[0]);
+function authorize(credentials, callback, filePath) {
+  const { client_secret, client_id, redirect_uris } = credentials.installed;
+  const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, redirect_uris[0]);
 
-oAuth2Client.setCredentials({ refresh_token: process.env.REFRESH_TOKEN });
-
-function uploadBackup(fileName) {
-  const drive = google.drive({ version: 'v3', auth: oAuth2Client });
-
-  const fileMetadata = {
-    name: fileName,
-  };
-
-  const media = {
-    mimeType: 'application/json',
-    body: fs.createReadStream(fileName),
-  };
-
-  drive.files.create(
-    {
-      resource: fileMetadata,
-      media: media,
-      fields: 'id',
-    },
-    (err, file) => {
-      if (err) {
-        console.error('Dosya yüklenirken bir hata oluştu:', err);
-      } else {
-        console.log('Dosya başarıyla yüklendi. Dosya ID\'si:', file.data.id);
-      }
-    }
-  );
+  fs.readFile(TOKEN_PATH, (err, token) => {
+    if (err) return getNewToken(oAuth2Client, callback, filePath);
+    oAuth2Client.setCredentials(JSON.parse(token));
+    callback(oAuth2Client, filePath);
+  });
 }
 
-module.exports = { uploadBackup };
+function getNewToken(oAuth2Client, callback, filePath) {
+  const authUrl = oAuth2Client.generateAuthUrl({
+    access_type: 'offline',
+    scope: SCOPES,
+  });
+
+  console.log('Authorize this app by visiting this url:', authUrl);
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  rl.question('Enter the code from that page here: ', (code) => {
+    rl.close();
+    oAuth2Client.getToken(code, (err, token) => {
+      if (err) return console.error('Error retrieving access token', err);
+      oAuth2Client.setCredentials(token);
+      fs.writeFile(TOKEN_PATH, JSON.stringify(token), (err) => {
+        if (err) console.error(err);
+        console.log('Token stored to', TOKEN_PATH);
+      });
+      callback(oAuth2Client, filePath);
+    });
+  });
+}
+
+function uploadBackup(auth, filePath) {
+  const drive = google.drive({ version: 'v3', auth });
+  const fileMetadata = {
+    name: filePath.split('/').pop(),
+  };
+  const media = {
+    mimeType: 'application/json',
+    body: fs.createReadStream(filePath),
+  };
+  drive.files.create({
+    resource: fileMetadata,
+    media: media,
+    fields: 'id',
+  }, (err, file) => {
+    if (err) {
+      console.error(err);
+    } else {
+      console.log('File Id: ', file.data.id);
+    }
+  });
+}
+
+function backup(filePath) {
+  fs.readFile('credentials.json', (err, content) => {
+    if (err) return console.log('Error loading client secret file:', err);
+    authorize(JSON.parse(content), uploadBackup, filePath);
+  });
+}
+
+module.exports = { backup };
