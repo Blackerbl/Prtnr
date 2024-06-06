@@ -3,7 +3,7 @@ const { Client, Intents, MessageEmbed } = require('discord.js');
 const schedule = require('node-schedule');
 const fs = require('fs');
 const express = require('express');
-const { uploadBackup } = require('./driveHelper');
+const { backup } = require('./driveHelper');
 
 const client = new Client({
   intents: [Intents.FLAGS.GUILDS, Intents.FLAGS.GUILD_MESSAGES]
@@ -33,17 +33,17 @@ function savePoints() {
   fs.writeFileSync('userPoints.json', JSON.stringify(userPoints, null, 2));
   fs.writeFileSync('allTimePoints.json', JSON.stringify(allTimePoints, null, 2));
   fs.writeFileSync('serverConfig.json', JSON.stringify(serverConfig, null, 2));
-  uploadBackup('userPoints.json');
-  uploadBackup('allTimePoints.json');
-  uploadBackup('serverConfig.json');
+  backup('userPoints.json');
+  backup('allTimePoints.json');
+  backup('serverConfig.json');
 }
 
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}!`);
   loadPoints();
 
-  // Puanları her 5 dakikada bir kaydetme
-  setInterval(savePoints, 5 * 60 * 1000);
+  // Puanları her 1 dakikada bir kaydetme
+  setInterval(savePoints, 1 * 60 * 1000);
 
   // Haftalık sıfırlama ve yedekleme
   schedule.scheduleJob('0 0 * * 0', () => {
@@ -103,9 +103,10 @@ client.on('messageCreate', async (message) => {
         🕯️︰\n\n**Haftalık Puan:** ${weeklyPoints}
         ☁️︰\n**Haftalık Sıralama:** ${userWeeklyRank}
         🐚︰\n\n**Toplam Puan:** ${allTimePointsCount}
-        🦢︰\n**Toplam Sıralama:** ${userAllTimeRank}   ㅤ   💌
-        ㅤㅤㅤㅤ  ㅤ 
-        ㅤㅤㅤ︶ ͡ ۫ ˓ ʚ🪷ɞ ˒ ۫ ͡ ︶`)
+🦢︰\n**Toplam Sıralama:** ${userAllTimeRank}
+      ㅤ   💌
+      ㅤㅤㅤㅤ  ㅤ 
+      ㅤㅤㅤ︶ ͡ ۫ ˓ ʚ🪷ɞ ˒ ۫ ͡ ︶`)
       .setThumbnail(userAvatarURL); // Üyenin resmini ekliyoruz
 
     message.reply({ embeds: [embed] });
@@ -196,6 +197,3 @@ function getAllTimeRanking() {
 }
 
 client.login(token);
-```
-
-
