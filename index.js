@@ -1,12 +1,8 @@
-const { Client, GatewayIntentBits, MessageEmbed } = require("discord.js");
-const schedule = require("node-schedule");
-const fs = require("fs");
-const { backup } = require("./driveHelper");
-
-// Kendi sunucu ve kanal ID'lerinizi buraya yapıştırın
-const myGuildId = '1194625018315948123';
-const logChannelId = '1227001170627661874';
-const targetChannelId = '1227001268833226843';
+require('dotenv').config();
+const { Client, GatewayIntentBits, MessageEmbed, Permissions } = require('discord.js');
+const schedule = require('node-schedule');
+const fs = require('fs');
+const { backup } = require('./driveHelper');
 
 const client = new Client({
   intents: [
@@ -16,33 +12,69 @@ const client = new Client({
   ],
 });
 
-const token = 'MTI0ODM0Nzg4NzYxNjY1OTQ5Nw.GtRnI0.dnhcij8jUI_6OzZx_ojfudX8uArOgH-h28Hej0';
+const token = process.env.TOKEN;
+const guildId = process.env.GUILD_ID;
+const logChannelId = process.env.LOG_CHANNEL_ID;
+const targetChannelId = process.env.TARGET_CHANNEL_ID;
 
 let userPoints = {};
 let allTimePoints = {};
 
 // Puanları dosyadan yükleme
 function loadPoints() {
-  if (fs.existsSync("userPoints.json")) {
-    userPoints = JSON.parse(fs.readFileSync("userPoints.json", "utf8"));
+  if (fs.existsSync('userPoints.json')) {
+    userPoints = JSON.parse(fs.readFileSync('userPoints.json', 'utf8'));
   }
-  if (fs.existsSync("allTimePoints.json")) {
-    allTimePoints = JSON.parse(fs.readFileSync("allTimePoints.json", "utf8"));
+  if (fs.existsSync('allTimePoints.json')) {
+    allTimePoints = JSON.parse(fs.readFileSync('allTimePoints.json', 'utf8'));
   }
 }
 
 // Puanları dosyaya kaydetme
 function savePoints() {
-  fs.writeFileSync("userPoints.json", JSON.stringify(userPoints, null, 2));
-  fs.writeFileSync(
-    "allTimePoints.json",
-    JSON.stringify(allTimePoints, null, 2)
-  );
-  backup("userPoints.json");
-  backup("allTimePoints.json");
+  fs.writeFileSync('userPoints.json', JSON.stringify(userPoints, null, 2));
+  fs.writeFileSync('allTimePoints.json', JSON.stringify(allTimePoints, null, 2));
+  backup('userPoints.json');
+  backup('allTimePoints.json');
 }
 
-client.once("ready", () => {
+// Kullanıcının sıralamasını hesaplama
+function getUserRank(points, userId) {
+  const sortedUsers = Object.entries(points).sort(([, a], [, b]) => b - a);
+  return sortedUsers.findIndex(([id]) => id === userId) + 1;
+}
+
+// Haftalık puanları sıfırlayıp log kanalı ve target kanala mesaj gönderme
+function logAndResetPoints() {
+  const logChannel = client.channels.cache.get(logChannelId);
+  const targetChannel = client.channels.cache.get(targetChannelId);
+  
+  const sortedWeeklyPoints = Object.entries(userPoints).sort(([, a], [, b]) => b - a);
+  const sortedAllTimePoints = Object.entries(allTimePoints).sort(([, a], [, b]) => b - a);
+
+  const weeklyRanking = sortedWeeklyPoints.map(([id, points], index) => `${index + 1}. <@${id}>: ${points} puan`).join('\n');
+  const allTimeRanking = sortedAllTimePoints.map(([id, points], index) => `${index + 1}. <@${id}>: ${points} puan`).join('\n');
+
+  const logEmbed = new MessageEmbed()
+    .setColor('#0099ff')
+    .setTitle('Haftalık Partnerlik Puanları Sıfırlanması')
+    .setDescription('Haftalık puanlar sıfırlanmış ve yedeklenmiştir.')
+    .addField('Haftalık Sıralama', weeklyRanking)
+    .addField('Tüm Zamanlar Sıralaması', allTimeRanking);
+
+  const targetEmbed = new MessageEmbed()
+    .setColor('#ff9900')
+    .setTitle('Haftalık Partnerlik Puanları Sıfırlanması')
+    .setDescription('Haftalık puanlar sıfırlanmıştır. Yeni haftaya hazır olun!');
+
+  if (logChannel) logChannel.send({ embeds: [logEmbed] });
+  if (targetChannel) targetChannel.send({ embeds: [targetEmbed] });
+
+  userPoints = {};
+  savePoints();
+}
+
+client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}!`);
   loadPoints();
 
@@ -50,16 +82,16 @@ client.once("ready", () => {
   setInterval(savePoints, 1 * 60 * 1000);
 
   // Haftalık sıfırlama ve yedekleme
-  schedule.scheduleJob("0 0 * * 0", () => {
+  schedule.scheduleJob('0 0 * * 0', () => {
     logAndResetPoints();
     savePoints();
   });
 });
 
-client.on("messageCreate", async (message) => {
-  const guildId = message.guild.id;
+client.on('messageCreate', async (message) => {
+  if (message.guild.id !== guildId) return;
 
-  if (guildId === myGuildId && message.channel.id === targetChannelId && containsInviteLink(message.content)) {
+  if (message.channel.id === targetChannelId && containsInviteLink(message.content)) {
     const userId = message.author.id;
     const userAvatarURL = message.author.displayAvatarURL();
 
@@ -77,24 +109,20 @@ client.on("messageCreate", async (message) => {
     const userAllTimeRank = getUserRank(allTimePoints, userId);
 
     const embed = new MessageEmbed()
-      .setColor("#f4bfc7")
-      .setTitle("Partner Başarılı!")
-      .setDescription(
-        `🪷︰Yeni partner için teşekkürler <@${userId}>! >ᴗ<\n🪷︰Partner yaparak 1 puan kazandınız. Şu anki toplam puanınız: ${userPoints[userId]} 🏆\n\n**Haftalık Sıralama:** ${userWeeklyRank}\n\n**Toplam Sıralama:** ${userAllTimeRank}`
-      )
-      .setThumbnail(userAvatarURL);
+      .setColor('#f4bfc7')
+      .setTitle('Partner Başarılı!')
+      .setDescription(`🪷︰Yeni partner için teşekkürler <@${userId}>! >ᴗ<\n🪷︰Partner yaparak 1 puan kazandınız. Şu anki toplam puanınız: ${userPoints[userId]} 🏆\n\n**Haftalık Sıralama:** ${userWeeklyRank}\n\n**Toplam Sıralama:** ${userAllTimeRank}`)
+      .setThumbnail(userAvatarURL); // Üyenin resmini ekliyoruz
 
     message.reply({ embeds: [embed] });
 
     savePoints();
   }
 
-  if (message.content.startsWith("!puan")) {
+  if (message.content.startsWith('!puan')) {
     const userMention = message.mentions.users.first();
     const userId = userMention ? userMention.id : message.author.id;
-    const userAvatarURL = userMention
-      ? userMention.displayAvatarURL()
-      : message.author.displayAvatarURL();
+    const userAvatarURL = userMention ? userMention.displayAvatarURL() : message.author.displayAvatarURL();
 
     const weeklyPoints = userPoints[userId] || 0;
     const allTimePointsCount = allTimePoints[userId] || 0;
@@ -102,10 +130,9 @@ client.on("messageCreate", async (message) => {
     const userAllTimeRank = getUserRank(allTimePoints, userId);
 
     const embed = new MessageEmbed()
-      .setColor("#00FF00")
-      .setTitle("Puan Durumu")
-      .setDescription(
-        `
+      .setColor('#00FF00')
+      .setTitle('Puan Durumu')
+      .setDescription(`
         ㅤㅤ ㅤ‿︵˓ ʚ🪷ɞ ˓ ︵ ͜
 
         🪽︰<@${userId}> için puan durumu;
@@ -115,71 +142,35 @@ client.on("messageCreate", async (message) => {
         🦢︰\n**Toplam Sıralama:** ${userAllTimeRank}
       ㅤ   💌
       ㅤㅤㅤㅤ  ㅤ 
-      ㅤㅤㅤ︶ ͡ ۫ ˓ ʚ🪷ɞ ˒ ۫ ͡ ︶`
-      )
-      .setThumbnail(userAvatarURL);
+      ㅤㅤㅤ︶ ͡ ۫ ˓ ʚ🪷ɞ ˒ ۫ ͡ ︶`)
+      .setThumbnail(userAvatarURL); // Üyenin resmini ekliyoruz
 
     message.reply({ embeds: [embed] });
+  }
+
+  if (message.content.startsWith('/kanalayarla')) {
+    if (!message.member.permissions.has(Permissions.FLAGS.ADMINISTRATOR)) {
+      return message.reply('Bu komutu kullanmak için yetkiniz yok.');
+    }
+
+    const args = message.content.split(' ').slice(1);
+    const targetChannelId = args[1];
+    const logChannelId = args[0];
+
+    if (!targetChannelId || !logChannelId) {
+      return message.reply('Lütfen hem hedef kanal ID\'sini hem de log kanal ID\'sini belirtin. Örnek kullanım: `/kanalayarla [logChannelId] [targetChannelId]`');
+    }
+
+    process.env.TARGET_CHANNEL_ID = targetChannelId;
+    process.env.LOG_CHANNEL_ID = logChannelId;
+
+    message.reply('Kanallar başarıyla ayarlandı.');
   }
 });
 
 function containsInviteLink(message) {
-  const inviteLinkPattern =
-    /\b(?:https?:\/\/)?(?:www\.)?(?:discord(?:\.com|app\.com|\.gg)\/invite\/)?[a-zA-Z0-9-]{2,32}\b/gi;
+  const inviteLinkPattern = /\b(?:https?:\/\/)?(?:www\.)?(?:discord(?:\.com|app\.com|\.gg)\/\S+)/gi;
   return inviteLinkPattern.test(message);
-}
-
-function logAndResetPoints() {
-  const logChannel = client.channels.cache.get(logChannelId);
-
-  if (logChannel) {
-    const weeklyRanking = getWeeklyRanking();
-    const allTimeRanking = getAllTimeRanking();
-
-    const weeklyEmbed = new MessageEmbed()
-      .setColor("#FFA500")
-      .setTitle("Haftalık Partner Durumu")
-      .setDescription(weeklyRanking);
-
-    const allTimeEmbed = new MessageEmbed()
-      .setColor("#0000FF")
-      .setTitle("Tüm Zamanların Partner Durumu")
-      .setDescription(allTimeRanking);
-
-    logChannel.send({ embeds: [weeklyEmbed, allTimeEmbed] });
-
-    userPoints = {};
-    savePoints();
-  }
-}
-
-function getUserRank(points, userId) {
-  const sortedUsers = Object.entries(points).sort((a, b) => b[1] - a[1]);
-  const userIndex = sortedUsers.findIndex(([id]) => id === userId);
-
-  return userIndex !== -1 ? userIndex + 1 : "Sıralama Bulunamadı";
-}
-
-function getWeeklyRanking() {
-  let ranking = "";
-  const sortedUsers = Object.entries(userPoints).sort((a, b) => b[1] - a[1]);
-
-  sortedUsers.forEach(([userId, points], index) => {
-    ranking += `${index + 1}. <@${userId}>: ${points} puan\n`;
-  });
-
-  return ranking || "Bu hafta henüz puan yok.";
-}
-
-function getAllTimeRanking() {
-  let ranking = "";
-  const sortedUsers = Object.entries(allTimePoints).sort((a, b) => b[1] - a[1]);
-
-  sortedUsers.forEach(([userId, points], index) => {
-    ranking += `${index + 1}. <@${userId}>: ${points} puan\n`;
-  });
-
-  return ranking || "Henüz toplam puan yok.";
 }
 
 client.login(token);
