@@ -1,16 +1,14 @@
 const fs = require('fs');
 const readline = require('readline');
 const { google } = require('googleapis');
+require('dotenv').config();
 
 const SCOPES = ['https://www.googleapis.com/auth/drive.file'];
 const TOKEN_PATH = 'token.json';
 
-const CLIENT_ID = '990085899784-qdrntiq1tdcpptr31f82a2bd8lm8oer8.apps.googleusercontent.com';
-const CLIENT_SECRET = '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';
-const REDIRECT_URI = 'http://localhost:3000/oauth2callback';
-
 function authorize(callback, filePath) {
-  const oAuth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
+  const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI } = process.env;
+  const oAuth2Client = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI);
 
   fs.readFile(TOKEN_PATH, (err, token) => {
     if (err) return getNewToken(oAuth2Client, callback, filePath);
@@ -68,7 +66,10 @@ function uploadBackup(auth, filePath) {
 }
 
 function backup(filePath) {
-  authorize(uploadBackup, filePath);
+  fs.readFile('credentials.json', (err, content) => {
+    if (err) return console.log('Error loading client secret file:', err);
+    authorize(uploadBackup, filePath);
+  });
 }
 
 module.exports = { backup };
